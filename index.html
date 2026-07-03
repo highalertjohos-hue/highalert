@@ -1,18 +1,18 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <title>High Alert Medication Analyzer</title>
 
 <link rel="stylesheet" href="style.css">
 
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.min.js"></script>
+<!-- PDF.js Stable -->
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+
+<!-- Excel -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 </head>
@@ -20,73 +20,58 @@
 <body>
 
 <nav class="navbar">
-
-<div class="logo">
-
-💊 HAMA
-
-</div>
-
-<div class="menu">
-
-<button>Dashboard</button>
-<button>High Alert Drugs</button>
-<button>Reports</button>
-
-</div>
-
+<div class="logo">💊 HAMA</div>
 </nav>
 
-<section class="hero">
+<div class="hero">
 
 <h1>High Alert Medication Analyzer</h1>
 
-<p>
+<p>Upload Hospital Drug Distribution List</p>
 
-Upload Hospital Drug Distribution PDF and automatically detect High Alert Medications.
+</div>
 
-</p>
-
-</section>
-
-<section class="upload-section">
-
-<div class="upload-box" id="dropZone">
+<div class="upload-section">
 
 <input
 type="file"
 id="pdfFile"
 accept=".pdf"
-hidden
+style="display:none"
 >
 
-<div class="upload-icon">
+<div class="upload-box" id="dropZone">
 
-📄
-
-</div>
-
-<h2>Drag & Drop PDF</h2>
-
-<p>or</p>
-
-<button id="chooseFile">
+<h2 id="fileName">
 
 Choose PDF
 
+</h2>
+
+<button
+type="button"
+id="chooseFile"
+>
+
+Browse PDF
+
 </button>
 
 </div>
 
-<button id="analyzeBtn" class="analyze">
+<button
+type="button"
+class="analyze"
+id="analyzeBtn"
+>
 
-Analyze Report
+Analyze
 
 </button>
 
-</section>
+</div>
 
-<section class="summary">
+<div class="summary">
 
 <div class="card">
 
@@ -112,13 +97,9 @@ Analyze Report
 
 </div>
 
-</section>
+</div>
 
-<section class="results">
-
-<h2>Detected Medications</h2>
-
-<div class="table-wrapper">
+<div class="results">
 
 <table id="resultTable">
 
@@ -128,11 +109,11 @@ Analyze Report
 
 <th>Patient</th>
 
-<th>File No</th>
+<th>File</th>
 
 <th>Ward</th>
 
-<th>Brand</th>
+<th>Drug</th>
 
 <th>Generic</th>
 
@@ -161,30 +142,6 @@ No Data
 </table>
 
 </div>
-
-<div class="buttons">
-
-<button id="exportExcel">
-
-Export Excel
-
-</button>
-
-<button id="printBtn">
-
-Print Report
-
-</button>
-
-</div>
-
-</section>
-
-<footer>
-
-© 2026 High Alert Medication Analyzer
-
-</footer>
 
 <script src="app.js"></script>
 
