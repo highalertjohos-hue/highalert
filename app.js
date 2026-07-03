@@ -1,145 +1,236 @@
+// ==========================================
+// High Alert Medication Analyzer
 // app.js
+// Part 1
+// ==========================================
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.js";
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.js";
 
-const chooseFile = document.getElementById("chooseFile");
-const pdfFile = document.getElementById("pdfFile");
-const dropZone = document.getElementById("dropZone");
-const analyzeBtn = document.getElementById("analyzeBtn");
+const pdfInput=document.getElementById("pdfFile");
+const chooseBtn=document.getElementById("chooseFile");
+const analyzeBtn=document.getElementById("analyzeBtn");
+const dropZone=document.getElementById("dropZone");
 
-const patientCount = document.getElementById("patientCount");
-const drugCount = document.getElementById("drugCount");
-const highAlertCount = document.getElementById("highAlertCount");
+const patientCount=document.getElementById("patientCount");
+const drugCount=document.getElementById("drugCount");
+const highAlertCount=document.getElementById("highAlertCount");
 
-const table = document.querySelector("#resultTable tbody");
+const tbody=document.querySelector("#resultTable tbody");
 
-let extractedText = "";
-let selectedFile = null;
+let selectedFile=null;
 
-chooseFile.onclick = () => pdfFile.click();
+let reportText="";
 
-pdfFile.onchange = (e) => {
-    selectedFile = e.target.files[0];
-    dropZone.querySelector("h2").innerHTML = selectedFile.name;
+let parsedDrugs=[];
+
+let highAlertDatabase=[];
+
+chooseBtn.onclick=()=>{
+
+pdfInput.click();
+
 };
 
-dropZone.addEventListener("dragover", e => {
-    e.preventDefault();
-    dropZone.style.background="#eef4ff";
+pdfInput.onchange=e=>{
+
+selectedFile=e.target.files[0];
+
+if(selectedFile){
+
+dropZone.querySelector("h2").innerHTML=selectedFile.name;
+
+}
+
+};
+
+dropZone.addEventListener("dragover",e=>{
+
+e.preventDefault();
+
+dropZone.style.background="#eef4ff";
+
 });
 
-dropZone.addEventListener("dragleave", () => {
-    dropZone.style.background="#fff";
-});
+dropZone.addEventListener("dragleave",()=>{
 
-dropZone.addEventListener("drop", e => {
-
-    e.preventDefault();
-
-    selectedFile=e.dataTransfer.files[0];
-
-    pdfFile.files=e.dataTransfer.files;
-
-    dropZone.querySelector("h2").innerHTML=selectedFile.name;
+dropZone.style.background="#fff";
 
 });
+
+dropZone.addEventListener("drop",e=>{
+
+e.preventDefault();
+
+selectedFile=e.dataTransfer.files[0];
+
+pdfInput.files=e.dataTransfer.files;
+
+dropZone.querySelector("h2").innerHTML=selectedFile.name;
+
+});
+
+async function readPDF(file){
+
+const buffer=await file.arrayBuffer();
+
+const pdf=await pdfjsLib.getDocument(buffer).promise;
+
+let text="";
+
+for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
+
+const page=await pdf.getPage(pageNumber);
+
+const content=await page.getTextContent();
+
+const pageText=content.items.map(item=>item.str).join(" ");
+
+text+=pageText+"\n";
+
+}
+
+return text;
+
+}
 
 analyzeBtn.onclick=async()=>{
 
 if(!selectedFile){
 
-alert("Choose PDF");
+alert("Please choose PDF");
 
 return;
 
 }
 
-table.innerHTML="<tr><td colspan='7'>Reading PDF...</td></tr>";
+tbody.innerHTML="<tr><td colspan='7'>Reading PDF...</td></tr>";
 
-const buffer=await selectedFile.arrayBuffer();
+reportText=await readPDF(selectedFile);
 
-const pdf=await pdfjsLib.getDocument(buffer).promise;
-
-extractedText="";
-
-for(let i=1;i<=pdf.numPages;i++){
-
-const page=await pdf.getPage(i);
-
-const content=await page.getTextContent();
-
-const text=content.items.map(x=>x.str).join(" ");
-
-extractedText+=text+"\n";
-
-}
-
-parseReport(extractedText);
+parseHospitalReport(reportText);
 
 };
 
-function parseReport(text){
+function resetCounters(){
 
-const drugs=[];
+patientCount.innerHTML="0";
 
-const patients=[];
+drugCount.innerHTML="0";
 
-const lines=text.split("\n");
+highAlertCount.innerHTML="0";
 
-let currentPatient="";
+parsedDrugs=[];
 
-let currentFile="";
+tbody.innerHTML="";
 
-let currentWard="";
+}
+// ==========================================
+// Part 2
+// Hospital PDF Parser
+// ==========================================
 
-lines.forEach(line=>{
+function parseHospitalReport(text){
+
+resetCounters();
+
+const lines=text
+.replace(/\r/g,"")
+.split("\n")
+.map(x=>x.trim())
+.filter(x=>x.length>0);
+
+let patient="";
+let fileNo="";
+let ward="";
+
+for(let i=0;i<lines.length;i++){
+
+const line=lines[i];
 
 if(line.includes("Patient Name")){
 
-currentPatient=line.replace("Patient Name","").trim();
+patient=line
+.replace("Patient Name","")
+.replace(":","")
+.trim();
+
+continue;
 
 }
 
 if(line.includes("File No")){
 
-currentFile=line.replace("File No","").trim();
+fileNo=line
+.replace("File No","")
+.replace(":","")
+.trim();
+
+continue;
 
 }
 
 if(line.includes("Ward")){
 
-currentWard=line.replace("Ward","").trim();
+ward=line
+.replace("Ward","")
+.replace(":","")
+.trim();
+
+continue;
 
 }
 
+const lower=line.toLowerCase();
+
+const isDrug=
+
+lower.includes("tablet")||
+lower.includes("capsule")||
+lower.includes("vial")||
+lower.includes("ampoule")||
+lower.includes("solution")||
+lower.includes("syringe")||
+lower.includes("powder")||
+lower.includes("injection");
+
+if(!isDrug) continue;
+
+let brand=line;
+
+let generic="";
+
+if(i+1<lines.length){
+
+const next=lines[i+1];
+
 if(
 
-line.toLowerCase().includes("tablet")||
-
-line.toLowerCase().includes("capsule")||
-
-line.toLowerCase().includes("vial")||
-
-line.toLowerCase().includes("ampoule")||
-
-line.toLowerCase().includes("solution")||
-
-line.toLowerCase().includes("injection")
+!next.includes("Patient")&&
+!next.includes("Ward")&&
+!next.includes("File")&&
+!next.includes("Doctor")&&
+!next.includes("Dose")
 
 ){
 
-drugs.push({
+generic=next;
 
-patient:currentPatient,
+}
 
-file:currentFile,
+}
 
-ward:currentWard,
+parsedDrugs.push({
 
-brand:line,
+patient,
 
-generic:"",
+file:fileNo,
+
+ward,
+
+brand,
+
+generic,
 
 category:"",
 
@@ -149,35 +240,85 @@ high:false
 
 }
 
-});
+detectDuplicates();
 
-patientCount.innerHTML=[...new Set(drugs.map(x=>x.patient))].length;
+updateCounters();
 
-drugCount.innerHTML=drugs.length;
-
-highAlertCount.innerHTML=0;
-
-drawTable(drugs);
+drawResults();
 
 }
 
-function drawTable(drugs){
+function detectDuplicates(){
 
-table.innerHTML="";
+const unique=[];
 
-if(drugs.length===0){
+const names=new Set();
 
-table.innerHTML="<tr><td colspan='7'>No Data</td></tr>";
+parsedDrugs.forEach(drug=>{
+
+const key=
+
+drug.patient+
+
+drug.brand+
+
+drug.generic;
+
+if(!names.has(key)){
+
+names.add(key);
+
+unique.push(drug);
+
+}
+
+});
+
+parsedDrugs=unique;
+
+}
+
+function updateCounters(){
+
+const patients=[
+
+...new Set(
+
+parsedDrugs.map(x=>x.patient)
+
+)
+
+];
+
+patientCount.innerHTML=patients.length;
+
+drugCount.innerHTML=parsedDrugs.length;
+
+highAlertCount.innerHTML=
+
+parsedDrugs.filter(x=>x.high).length;
+
+}
+
+function drawResults(){
+
+tbody.innerHTML="";
+
+if(parsedDrugs.length===0){
+
+tbody.innerHTML=
+
+"<tr><td colspan='7'>No Data Found</td></tr>";
 
 return;
 
 }
 
-drugs.forEach(drug=>{
+parsedDrugs.forEach(drug=>{
 
-table.innerHTML+=`
+const row=document.createElement("tr");
 
-<tr>
+row.innerHTML=`
 
 <td>${drug.patient}</td>
 
@@ -193,30 +334,159 @@ table.innerHTML+=`
 
 <td>${drug.high?"🔴":"🟢"}</td>
 
-</tr>
-
 `;
+
+tbody.appendChild(row);
 
 });
 
 }
+// ==========================================
+// Part 3
+// Google Sheets + High Alert Detection
+// ==========================================
 
-document.getElementById("printBtn").onclick=()=>{
+// ضع هنا رابط Google Apps Script بعد إنشائه
+const GOOGLE_SCRIPT_URL =
+"https://script.google.com/macros/s/AKfycbyWjxtb7Fw4QlHphBrAnhTtb4QuYvASd2oiX8X5m4tdZRJHsErLbH9TsRBavODpo93_pQ/exec";
 
-window.print();
+async function loadHighAlertDatabase(){
+
+    try{
+
+        const response = await fetch(GOOGLE_SCRIPT_URL);
+
+        highAlertDatabase = await response.json();
+
+        compareWithDatabase();
+
+    }
+
+    catch(error){
+
+        console.error(error);
+
+        alert("Unable to load Google Sheets");
+
+    }
+
+}
+
+function normalize(text){
+
+    return text
+        .toLowerCase()
+        .replace(/[^\w\s]/g,"")
+        .replace(/\s+/g," ")
+        .trim();
+
+}
+
+function compareWithDatabase(){
+
+    let count = 0;
+
+    parsedDrugs.forEach(drug=>{
+
+        const brand = normalize(drug.brand);
+
+        const generic = normalize(drug.generic);
+
+        const found = highAlertDatabase.find(item=>{
+
+            const dbBrand = normalize(item.Brand);
+
+            const dbGeneric = normalize(item.Generic);
+
+            return (
+
+                brand.includes(dbBrand) ||
+
+                brand.includes(dbGeneric) ||
+
+                generic.includes(dbBrand) ||
+
+                generic.includes(dbGeneric)
+
+            );
+
+        });
+
+        if(found){
+
+            drug.high = true;
+
+            drug.category = found.Category;
+
+            drug.generic = found.Generic;
+
+            drug.brand = found.Brand;
+
+            count++;
+
+        }
+
+    });
+
+    highAlertCount.innerHTML = count;
+
+    drawResults();
+
+}
+
+analyzeBtn.onclick = async()=>{
+
+    if(!selectedFile){
+
+        alert("Choose PDF");
+
+        return;
+
+    }
+
+    tbody.innerHTML =
+    "<tr><td colspan='7'>Reading PDF...</td></tr>";
+
+    reportText = await readPDF(selectedFile);
+
+    parseHospitalReport(reportText);
+
+    await loadHighAlertDatabase();
 
 };
+
+// ==========================================
+// Export Excel
+// ==========================================
 
 document.getElementById("exportExcel").onclick=()=>{
 
-const wb=XLSX.utils.table_to_book(
+    const workbook = XLSX.utils.table_to_book(
 
-document.getElementById("resultTable"),
+        document.getElementById("resultTable"),
 
-{sheet:"Report"}
+        {sheet:"High Alert Report"}
 
-);
+    );
 
-XLSX.writeFile(wb,"HighAlertReport.xlsx");
+    XLSX.writeFile(
+
+        workbook,
+
+        "HighAlertReport.xlsx"
+
+    );
 
 };
+
+// ==========================================
+// Print
+// ==========================================
+
+document.getElementById("printBtn").onclick=()=>{
+
+    window.print();
+
+};
+
+console.log("High Alert Medication Analyzer Ready");
