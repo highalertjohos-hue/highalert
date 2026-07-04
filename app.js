@@ -1,8 +1,7 @@
-// =======================================
+// ======================================
 // High Alert Medication Analyzer
-// app.js
-// Part 1
-// =======================================
+// New Engine
+// ======================================
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
 "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
@@ -13,7 +12,6 @@ const GOOGLE_SCRIPT_URL =
 const pdfInput=document.getElementById("pdfFile");
 const chooseBtn=document.getElementById("chooseFile");
 const analyzeBtn=document.getElementById("analyzeBtn");
-const dropZone=document.getElementById("dropZone");
 const fileName=document.getElementById("fileName");
 
 const patientCount=document.getElementById("patientCount");
@@ -23,17 +21,16 @@ const highAlertCount=document.getElementById("highAlertCount");
 const tbody=document.querySelector("#resultTable tbody");
 
 let selectedFile=null;
-let pdfText="";
 let database=[];
-let results=[];
+let pages=[];
 
-chooseBtn.addEventListener("click",()=>{
+chooseBtn.onclick=()=>{
 
 pdfInput.click();
 
-});
+};
 
-pdfInput.addEventListener("change",e=>{
+pdfInput.onchange=e=>{
 
 selectedFile=e.target.files[0];
 
@@ -43,25 +40,7 @@ fileName.innerHTML=selectedFile.name;
 
 }
 
-});
-
-dropZone.addEventListener("dragover",e=>{
-
-e.preventDefault();
-
-});
-
-dropZone.addEventListener("drop",e=>{
-
-e.preventDefault();
-
-selectedFile=e.dataTransfer.files[0];
-
-pdfInput.files=e.dataTransfer.files;
-
-fileName.innerHTML=selectedFile.name;
-
-});
+};
 
 async function loadDatabase(){
 
@@ -81,388 +60,351 @@ data:buffer
 
 }).promise;
 
-let text="";
+pages=[];
 
-for(let page=1;page<=pdf.numPages;page++){
+for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
 
-const p=await pdf.getPage(page);
+const page=await pdf.getPage(pageNumber);
 
-const content=await p.getTextContent();
+const content=await page.getTextContent();
 
-text+=content.items.map(i=>i.str).join(" ");
+const items=content.items.map(item=>{
 
-text+="\n";
+return{
+
+text:item.str,
+
+x:item.transform[4],
+
+y:item.transform[5]
+
+};
+
+});
+
+pages.push(items);
 
 }
 
-return text;
+return pages;
 
 }
 
-function normalize(str){
+function normalize(text){
 
-return str
+return text
 .toLowerCase()
 .replace(/[^\w\s]/g,"")
 .replace(/\s+/g," ")
 .trim();
 
 }
-// =======================================
+
+console.log("Engine Loaded");
+// ======================================
 // Part 2
-// Parse Drug Distribution List
-// =======================================
+// Build Rows From PDF Coordinates
+// ======================================
 
-function parseReport(text){
+function groupRows(items){
 
-results=[];
+    const rows=[];
 
-const lines=text
-.replace(/\r/g,"")
-.split("\n")
-.map(x=>x.trim())
-.filter(x=>x.length>0);
+    const tolerance=2;
 
-let ward="";
-let patient="";
-let fileNo="";
+    items.forEach(item=>{
 
-for(let i=0;i<lines.length;i++){
+        let row=rows.find(r=>Math.abs(r.y-item.y)<tolerance);
 
-const line=lines[i];
+        if(!row){
 
-if(line.startsWith("Ward")){
+            row={
 
-ward=line.replace("Ward :","").trim();
+                y:item.y,
 
-continue;
+                cells:[]
 
-}
+            };
 
-if(line.startsWith("File No")){
+            rows.push(row);
 
-if(i+1<lines.length){
+        }
 
-const value=lines[i+1];
+        row.cells.push(item);
 
-const m=value.match(/\d+/);
+    });
 
-if(m){
+    rows.sort((a,b)=>b.y-a.y);
 
-fileNo=m[0];
+    rows.forEach(r=>{
 
-}
+        r.cells.sort((a,b)=>a.x-b.x);
 
-}
+        r.text=r.cells.map(c=>c.text).join(" ");
 
-continue;
+    });
+
+    return rows;
 
 }
 
-if(line.includes("Patient Name")){
+function extractPatients(rows){
 
-patient=line
-.replace("Patient Name :","")
-.replace("Patient Name","")
-.trim();
+    const patients=[];
 
-continue;
+    let current={
 
-}
+        ward:"",
+        file:"",
+        patient:"",
+        room:""
 
-const lower=line.toLowerCase();
+    };
 
-const isDrug=
+    rows.forEach(row=>{
 
-lower.includes("tablet")||
-lower.includes("capsule")||
-lower.includes("vial")||
-lower.includes("ampoule")||
-lower.includes("prefilled")||
-lower.includes("solution")||
-lower.includes("bottle")||
-lower.includes("powder");
+        const txt=row.text;
 
-if(!isDrug) continue;
+        if(txt.includes("Ward")){
 
-let generic="";
+            const m=txt.match(/Ward\s*:\s*(.+)/i);
 
-for(let j=i+1;j<Math.min(i+6,lines.length);j++){
+            if(m) current.ward=m[1].trim();
 
-const next=lines[j];
+        }
 
-if(
+        if(txt.includes("File No")){
 
-next.toLowerCase().includes("tablet")||
+            const m=txt.match(/File No\s*:\s*(\d+)/i);
 
-next.toLowerCase().includes("capsule")||
+            if(m) current.file=m[1];
 
-next.toLowerCase().includes("vial")||
+        }
 
-next.toLowerCase().includes("ampoule")
+        if(txt.includes("Patient Name")){
 
-){
+            const name=txt.match(/Patient Name\s*:\s*(.*?)\s*Room\/Bed/i);
 
-generic=next;
+            const room=txt.match(/Room\/Bed\s*:\s*(.*)$/i);
 
-break;
+            if(name) current.patient=name[1].trim();
 
-}
+            if(room) current.room=room[1].trim();
 
-}
+        }
 
-results.push({
+        if(current.file && current.patient){
 
-patient,
+            patients.push({
 
-file:fileNo,
+                ward:current.ward,
+                file:current.file,
+                patient:current.patient,
+                room:current.room,
+                y:row.y
 
-ward,
+            });
 
-brand:line,
+            current={
 
-generic,
+                ward:current.ward,
+                file:"",
+                patient:"",
+                room:""
 
-category:"",
+            };
 
-high:false
+        }
 
-});
+    });
 
-}
-
-compareDatabase();
+    return patients;
 
 }
 
-function compareDatabase(){
+function extractDrugs(rows,patients){
 
-let high=0;
+    const results=[];
 
-results.forEach(item=>{
+    rows.forEach(row=>{
 
-const brand=normalize(item.brand);
+        const txt=row.text;
 
-const generic=normalize(item.generic);
+        if(
 
-const found=database.find(db=>{
+            txt.includes("mg") ||
 
-return(
+            txt.includes("gram") ||
 
-brand.includes(normalize(db.Brand))||
+            txt.includes("tablet") ||
 
-brand.includes(normalize(db.Generic))||
+            txt.includes("capsule") ||
 
-generic.includes(normalize(db.Brand))||
+            txt.includes("vial") ||
 
-generic.includes(normalize(db.Generic))
+            txt.includes("Injection")
 
-);
+        ){
 
-});
+            let patient=patients[0];
 
-if(found){
+            patients.forEach(p=>{
 
-item.high=true;
+                if(row.y<p.y){
 
-item.brand=found.Brand;
+                    patient=p;
 
-item.generic=found.Generic;
+                }
 
-item.category=found.Category;
+            });
 
-high++;
+            results.push({
+
+                patient:patient?.patient || "",
+                file:patient?.file || "",
+                ward:patient?.ward || "",
+                brand:txt,
+                generic:"",
+                category:"",
+                high:false
+
+            });
+
+        }
+
+    });
+
+    return results;
 
 }
-
-});
-
-patientCount.innerHTML=
-
-new Set(results.map(x=>x.patient)).size;
-
-drugCount.innerHTML=results.length;
-
-highAlertCount.innerHTML=high;
-
-drawTable();
-
-}
-// =======================================
+// ======================================
 // Part 3
-// Analyze + Draw + Export
-// =======================================
+// Detect Brand + Generic + High Alert
+// ======================================
 
-function drawTable(){
+function compareWithDatabase(results){
 
-tbody.innerHTML="";
+    results.forEach(drug=>{
 
-if(results.length===0){
+        const text=normalize(drug.brand);
 
-tbody.innerHTML=`
-<tr>
-<td colspan="7">
-No High Alert Drugs Found
-</td>
-</tr>
-`;
+        const found=database.find(item=>{
 
-return;
+            const brand=normalize(item.Brand);
 
-}
+            const generic=normalize(item.Generic);
 
-results.forEach(item=>{
+            return(
 
-const tr=document.createElement("tr");
+                text.includes(brand)||
 
-tr.innerHTML=`
+                text.includes(generic)
 
-<td>${item.patient}</td>
+            );
 
-<td>${item.file}</td>
+        });
 
-<td>${item.ward}</td>
+        if(found){
 
-<td>${item.brand}</td>
+            drug.high=true;
+            drug.brand=found.Brand;
+            drug.generic=found.Generic;
+            drug.category=found.Category;
 
-<td>${item.generic}</td>
+        }
 
-<td>${item.category}</td>
+    });
 
-<td>
-
-${item.high
-?'<span style="color:red;font-weight:bold">HIGH ALERT</span>'
-:'-'}
-
-</td>
-
-`;
-
-tbody.appendChild(tr);
-
-});
+    return results;
 
 }
 
-analyzeBtn.addEventListener("click",async()=>{
+function drawResults(results){
 
-if(!selectedFile){
+    tbody.innerHTML="";
 
-alert("Please choose PDF");
+    let patients=new Set();
 
-return;
+    let high=0;
+
+    results.forEach(drug=>{
+
+        patients.add(drug.file);
+
+        if(drug.high) high++;
+
+        tbody.innerHTML+=`
+
+        <tr>
+
+        <td>${drug.patient}</td>
+
+        <td>${drug.file}</td>
+
+        <td>${drug.ward}</td>
+
+        <td>${drug.brand}</td>
+
+        <td>${drug.generic}</td>
+
+        <td>${drug.category}</td>
+
+        <td>
+
+        ${drug.high
+        ?'<span style="color:red;font-weight:bold">HIGH ALERT</span>'
+        :''}
+
+        </td>
+
+        </tr>
+
+        `;
+
+    });
+
+    patientCount.innerHTML=patients.size;
+
+    drugCount.innerHTML=results.length;
+
+    highAlertCount.innerHTML=high;
 
 }
 
-try{
+analyzeBtn.onclick=async()=>{
 
-tbody.innerHTML=`
-<tr>
-<td colspan="7">
-Loading Database...
-</td>
-</tr>
-`;
+    if(!selectedFile){
 
-await loadDatabase();
+        alert("Choose PDF");
 
-tbody.innerHTML=`
-<tr>
-<td colspan="7">
-Reading PDF...
-</td>
-</tr>
-`;
+        return;
 
-pdfText=await readPDF(selectedFile);
+    }
 
-tbody.innerHTML=`
-<tr>
-<td colspan="7">
-Analyzing...
-</td>
-</tr>
-`;
+    tbody.innerHTML="<tr><td colspan='7'>Loading...</td></tr>";
 
-parseReport(pdfText);
+    await loadDatabase();
 
-}
+    const pages=await readPDF(selectedFile);
 
-catch(error){
+    let results=[];
 
-console.error(error);
+    pages.forEach(page=>{
 
-alert(error.message);
+        const rows=groupRows(page);
 
-}
+        const patients=extractPatients(rows);
 
-});
+        const drugs=extractDrugs(rows,patients);
 
-document
-.getElementById("exportExcel")
-.addEventListener("click",()=>{
+        results=results.concat(drugs);
 
-const wb=XLSX.utils.book_new();
+    });
 
-const rows=[
+    results=compareWithDatabase(results);
 
-[
-"Patient",
-"File",
-"Ward",
-"Brand",
-"Generic",
-"Category",
-"High Alert"
-]
+    drawResults(results);
 
-];
+};
 
-results.forEach(r=>{
-
-rows.push([
-
-r.patient,
-r.file,
-r.ward,
-r.brand,
-r.generic,
-r.category,
-r.high?"YES":"NO"
-
-]);
-
-});
-
-const ws=XLSX.utils.aoa_to_sheet(rows);
-
-XLSX.utils.book_append_sheet(
-
-wb,
-
-ws,
-
-"High Alert"
-
-);
-
-XLSX.writeFile(
-
-wb,
-
-"HighAlertReport.xlsx"
-
-);
-
-});
-
-document
-.getElementById("printBtn")
-.addEventListener("click",()=>{
-
-window.print();
-
-});
-
-console.log("Application Ready");
+console.log("Analyzer Ready");
