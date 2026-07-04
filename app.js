@@ -7,6 +7,9 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc =
 "https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
 
+const GOOGLE_SCRIPT_URL =
+"https://script.google.com/macros/s/AKfycbyWjxtb7Fw4QlHphBrAnhTtb4QuYvASd2oiX8X5m4tdZRJHsErLbH9TsRBavODpo93_pQ/exec";
+
 const pdfInput=document.getElementById("pdfFile");
 const chooseBtn=document.getElementById("chooseFile");
 const analyzeBtn=document.getElementById("analyzeBtn");
@@ -19,15 +22,10 @@ const highAlertCount=document.getElementById("highAlertCount");
 
 const tbody=document.querySelector("#resultTable tbody");
 
-const GOOGLE_SCRIPT_URL="https://script.google.com/macros/s/AKfycbyWjxtb7Fw4QlHphBrAnhTtb4QuYvASd2oiX8X5m4tdZRJHsErLbH9TsRBavODpo93_pQ/exec";
-
 let selectedFile=null;
-
 let pdfText="";
-
-let drugs=[];
-
 let database=[];
+let results=[];
 
 chooseBtn.addEventListener("click",()=>{
 
@@ -35,7 +33,7 @@ pdfInput.click();
 
 });
 
-pdfInput.addEventListener("change",(e)=>{
+pdfInput.addEventListener("change",e=>{
 
 selectedFile=e.target.files[0];
 
@@ -47,21 +45,13 @@ fileName.innerHTML=selectedFile.name;
 
 });
 
-dropZone.addEventListener("dragover",(e)=>{
+dropZone.addEventListener("dragover",e=>{
 
 e.preventDefault();
 
-dropZone.style.background="#eef4ff";
-
 });
 
-dropZone.addEventListener("dragleave",()=>{
-
-dropZone.style.background="white";
-
-});
-
-dropZone.addEventListener("drop",(e)=>{
+dropZone.addEventListener("drop",e=>{
 
 e.preventDefault();
 
@@ -72,6 +62,14 @@ pdfInput.files=e.dataTransfer.files;
 fileName.innerHTML=selectedFile.name;
 
 });
+
+async function loadDatabase(){
+
+const response=await fetch(GOOGLE_SCRIPT_URL);
+
+database=await response.json();
+
+}
 
 async function readPDF(file){
 
@@ -91,7 +89,7 @@ const p=await pdf.getPage(page);
 
 const content=await p.getTextContent();
 
-text+=content.items.map(x=>x.str).join(" ");
+text+=content.items.map(i=>i.str).join(" ");
 
 text+="\n";
 
@@ -101,63 +99,71 @@ return text;
 
 }
 
-async function loadDatabase(){
+function normalize(str){
 
-const response=await fetch(GOOGLE_SCRIPT_URL);
-
-database=await response.json();
+return str
+.toLowerCase()
+.replace(/[^\w\s]/g,"")
+.replace(/\s+/g," ")
+.trim();
 
 }
 // =======================================
 // Part 2
-// Parse Hospital Report
+// Parse Drug Distribution List
 // =======================================
 
 function parseReport(text){
 
-drugs=[];
+results=[];
 
 const lines=text
 .replace(/\r/g,"")
 .split("\n")
 .map(x=>x.trim())
-.filter(x=>x!="");
+.filter(x=>x.length>0);
 
-let patient="";
-let file="";
 let ward="";
+let patient="";
+let fileNo="";
 
 for(let i=0;i<lines.length;i++){
 
 const line=lines[i];
 
+if(line.startsWith("Ward")){
+
+ward=line.replace("Ward :","").trim();
+
+continue;
+
+}
+
+if(line.startsWith("File No")){
+
+if(i+1<lines.length){
+
+const value=lines[i+1];
+
+const m=value.match(/\d+/);
+
+if(m){
+
+fileNo=m[0];
+
+}
+
+}
+
+continue;
+
+}
+
 if(line.includes("Patient Name")){
 
 patient=line
+.replace("Patient Name :","")
 .replace("Patient Name","")
-.replace(":","")
-.trim();
-
-continue;
-
-}
-
-if(line.includes("File No")){
-
-file=line
-.replace("File No","")
-.replace(":","")
-.trim();
-
-continue;
-
-}
-
-if(line.includes("Ward")){
-
-ward=line
-.replace("Ward","")
-.replace(":","")
 .trim();
 
 continue;
@@ -172,24 +178,50 @@ lower.includes("tablet")||
 lower.includes("capsule")||
 lower.includes("vial")||
 lower.includes("ampoule")||
+lower.includes("prefilled")||
 lower.includes("solution")||
-lower.includes("powder")||
-lower.includes("syringe")||
-lower.includes("injection");
+lower.includes("bottle")||
+lower.includes("powder");
 
 if(!isDrug) continue;
 
-drugs.push({
+let generic="";
+
+for(let j=i+1;j<Math.min(i+6,lines.length);j++){
+
+const next=lines[j];
+
+if(
+
+next.toLowerCase().includes("tablet")||
+
+next.toLowerCase().includes("capsule")||
+
+next.toLowerCase().includes("vial")||
+
+next.toLowerCase().includes("ampoule")
+
+){
+
+generic=next;
+
+break;
+
+}
+
+}
+
+results.push({
 
 patient,
 
-file,
+file:fileNo,
 
 ward,
 
 brand:line,
 
-generic:"",
+generic,
 
 category:"",
 
@@ -199,35 +231,31 @@ high:false
 
 }
 
-matchDatabase();
+compareDatabase();
 
 }
 
-function normalize(text){
+function compareDatabase(){
 
-return text
-.toLowerCase()
-.replace(/[^\w\s]/g,"")
-.replace(/\s+/g," ")
-.trim();
+let high=0;
 
-}
+results.forEach(item=>{
 
-function matchDatabase(){
+const brand=normalize(item.brand);
 
-let highCount=0;
+const generic=normalize(item.generic);
 
-drugs.forEach(drug=>{
-
-const brand=normalize(drug.brand);
-
-const found=database.find(item=>{
+const found=database.find(db=>{
 
 return(
 
-brand.includes(normalize(item.Brand))||
+brand.includes(normalize(db.Brand))||
 
-brand.includes(normalize(item.Generic))
+brand.includes(normalize(db.Generic))||
+
+generic.includes(normalize(db.Brand))||
+
+generic.includes(normalize(db.Generic))
 
 );
 
@@ -235,15 +263,15 @@ brand.includes(normalize(item.Generic))
 
 if(found){
 
-drug.high=true;
+item.high=true;
 
-drug.category=found.Category;
+item.brand=found.Brand;
 
-drug.generic=found.Generic;
+item.generic=found.Generic;
 
-drug.brand=found.Brand;
+item.category=found.Category;
 
-highCount++;
+high++;
 
 }
 
@@ -251,59 +279,67 @@ highCount++;
 
 patientCount.innerHTML=
 
-new Set(drugs.map(x=>x.patient)).size;
+new Set(results.map(x=>x.patient)).size;
 
-drugCount.innerHTML=drugs.length;
+drugCount.innerHTML=results.length;
 
-highAlertCount.innerHTML=highCount;
+highAlertCount.innerHTML=high;
 
 drawTable();
 
 }
 // =======================================
 // Part 3
-// UI + Analyze + Export
+// Analyze + Draw + Export
 // =======================================
 
 function drawTable(){
 
 tbody.innerHTML="";
 
-if(drugs.length===0){
+if(results.length===0){
 
-tbody.innerHTML="<tr><td colspan='7'>No Data Found</td></tr>";
+tbody.innerHTML=`
+<tr>
+<td colspan="7">
+No High Alert Drugs Found
+</td>
+</tr>
+`;
 
 return;
 
 }
 
-drugs.forEach(drug=>{
+results.forEach(item=>{
 
-const row=document.createElement("tr");
+const tr=document.createElement("tr");
 
-row.innerHTML=`
+tr.innerHTML=`
 
-<td>${drug.patient}</td>
+<td>${item.patient}</td>
 
-<td>${drug.file}</td>
+<td>${item.file}</td>
 
-<td>${drug.ward}</td>
+<td>${item.ward}</td>
 
-<td>${drug.brand}</td>
+<td>${item.brand}</td>
 
-<td>${drug.generic}</td>
+<td>${item.generic}</td>
 
-<td>${drug.category}</td>
+<td>${item.category}</td>
 
-<td style="font-size:20px">
+<td>
 
-${drug.high ? "🔴 High Alert" : "🟢 Normal"}
+${item.high
+?'<span style="color:red;font-weight:bold">HIGH ALERT</span>'
+:'-'}
 
 </td>
 
 `;
 
-tbody.appendChild(row);
+tbody.appendChild(tr);
 
 });
 
@@ -313,19 +349,41 @@ analyzeBtn.addEventListener("click",async()=>{
 
 if(!selectedFile){
 
-alert("Please choose a PDF file.");
+alert("Please choose PDF");
 
 return;
 
 }
 
-tbody.innerHTML="<tr><td colspan='7'>Reading PDF...</td></tr>";
-
 try{
+
+tbody.innerHTML=`
+<tr>
+<td colspan="7">
+Loading Database...
+</td>
+</tr>
+`;
 
 await loadDatabase();
 
+tbody.innerHTML=`
+<tr>
+<td colspan="7">
+Reading PDF...
+</td>
+</tr>
+`;
+
 pdfText=await readPDF(selectedFile);
+
+tbody.innerHTML=`
+<tr>
+<td colspan="7">
+Analyzing...
+</td>
+</tr>
+`;
 
 parseReport(pdfText);
 
@@ -335,25 +393,63 @@ catch(error){
 
 console.error(error);
 
-alert("Error reading PDF or Google Sheets.");
+alert(error.message);
 
 }
 
 });
 
-document.getElementById("exportExcel").addEventListener("click",()=>{
+document
+.getElementById("exportExcel")
+.addEventListener("click",()=>{
 
-const workbook=XLSX.utils.table_to_book(
+const wb=XLSX.utils.book_new();
 
-document.getElementById("resultTable"),
+const rows=[
 
-{sheet:"High Alert"}
+[
+"Patient",
+"File",
+"Ward",
+"Brand",
+"Generic",
+"Category",
+"High Alert"
+]
+
+];
+
+results.forEach(r=>{
+
+rows.push([
+
+r.patient,
+r.file,
+r.ward,
+r.brand,
+r.generic,
+r.category,
+r.high?"YES":"NO"
+
+]);
+
+});
+
+const ws=XLSX.utils.aoa_to_sheet(rows);
+
+XLSX.utils.book_append_sheet(
+
+wb,
+
+ws,
+
+"High Alert"
 
 );
 
 XLSX.writeFile(
 
-workbook,
+wb,
 
 "HighAlertReport.xlsx"
 
@@ -361,10 +457,12 @@ workbook,
 
 });
 
-document.getElementById("printBtn").addEventListener("click",()=>{
+document
+.getElementById("printBtn")
+.addEventListener("click",()=>{
 
 window.print();
 
 });
 
-console.log("High Alert Medication Analyzer Loaded Successfully");
+console.log("Application Ready");
